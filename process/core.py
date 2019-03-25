@@ -3,6 +3,7 @@ import os
 import gzip
 import json
 import datetime
+import time
 #import timedelta  
 """
 with open("davis_80_station_ids.csv") as f:
@@ -10,7 +11,7 @@ with open("davis_80_station_ids.csv") as f:
 
 """
 START_INDEX_DATE = 4
-END_INDEX_DATE = 0
+END_INDEX_DATE = -4
 DEFAULT_CONFIG_FILE_PATH= "./config/config.json"
 
 
@@ -92,28 +93,53 @@ class FileCrawler:
                                 #if station in pattern_set:
                                 #    yield line
 
-        def interpretDateFormat(dateFormat):
-                
+        def interpretDateFormat(self, dateFormat):
+
                 """
                 Check Date Format 
 
                 """
-                formatInterprted = dateFormat.replace('%m','Mois').replace('%d','Jour du mois').replace('%Y', 'Annee en 4 chiffres').replace('%b','Les 3 premiers caractères du mois')
-                print ("Le format est : " + formatInterprted)
+                formatInterprted = dateFormat.replace('%m','Mois').replace('%d','Jour_du_mois').replace('%Y', 'Annee_en_4_chiffres').replace('%b','Les 3 premiers caractères du mois')
+                print ("The correct format is : " + formatInterprted)
         
 
-        def browseDirectoryRecursive(rootPath = '.', startingDate = datetime.date.today(), endingDate = None,
-                incrementDateMode = 'd', dateFormat = '%m/%d/%Y', datedFilesFolder=''):
+        def browseDirectoryRecursive(self, rootPath = '.', startingDate = datetime.date.today().strftime('%m%d%Y'), endingDate = None,
+                incrementDateMode = 'd', dateFormat = '%m%d%Y', datedFilesFolder=''):
 
                 """
                 Browse all directories and select files by dates
 
                 """
-                interpretDateFormat(dateFormat)
-                currentDate = startingDate
-                currentDateStr = startingDate.strftime('%m/%d/%Y')
+                #self.interpretDateFormat(dateFormat)
+                currentDateStr = self.validateDateTime(startingDate, dateFormat)
+                currentDate = datetime.datetime.strptime(currentDateStr, dateFormat)
                 datesList = []
+                datesListStr = []
                 dateFilesExist = False
+                
+
+
+                allFilesPathList = []
+                fileNamesList = []
+                selectedFilesPathList = []
+                nfiles = 0
+                # Browse all files in all directories inside the root directory and store paths, and files names
+                for root, directories, filenames in os.walk(rootPath):
+                        #print "Directories in " + rootPath + "\n" 
+                        #for directory in directories:
+                                #print ("Dir "+os.path.join(root, directory))
+
+                        #print "Files in " + rootPath + "\n" 
+                        for filename in filenames: 
+                                print ("File "+os.path.join(root,filename))
+                                allFilesPathList.append(os.path.join(root,filename))
+                                fileNamesList.append(filename)
+                                nfiles +=1
+                                #if (filename[START_INDEX_DATE:END_INDEX_DATE]):
+                                        #dateFilesExist = True
+                                        #print filename[START_INDEX_DATE:END_INDEX_DATE]
+                
+                
                 # TODO: Utiliser dateutil library pour plus de precision
                 nDays = 0
                 if (incrementDateMode == 'd'):
@@ -125,32 +151,66 @@ class FileCrawler:
                 if (incrementDateMode == 'y'):
                         nDays = 365
                 
-                if endingDate is None :
-                        datesList.append(startingDate+timedelta(days=nDays))
+                #define dates dependin on the incrementation method and number of files (possible dates files if no ending date defined)
+                ndates = 0
+                if (ndates == nfiles) :
+                        #if no files where found in directory so no need to compute anything (can be improved by checking dates early)
+                        print("No files to be selected !")
+                        return []
+                elif endingDate is None :
+                        while (ndates < nfiles):
+                                
+                                datesList.append(currentDate)
+                                datesListStr.append(currentDate.strftime(dateFormat))
+                                print("defined date : "+currentDate.strftime(dateFormat))
+                                currentDate = currentDate+datetime.timedelta(days=nDays)
+                                ndates+=1
                 else :
                         while (currentDate < endingDate):
-                                currentDate = currentDate+timedelta(days=nDays)
                                 datesList.append(currentDate)
-
-
-                allFilesPathList = []
-                for root, directories, filenames in os.walk(rootPath):
-                        #print "Directories in " + rootPath + "\n" 
-                        for directory in directories:
-                                print ("Dir "+os.path.join(root, directory))
-
-                        #print "Files in " + rootPath + "\n" 
-                        for filename in filenames: 
-                                print ("File "+os.path.join(root,filename))
-                                allFilesPathList.append(os.path.join(root,filename))
-                                print (filename[START_INDEX_DATE:END_INDEX_DATE])
-                                #if (filename[START_INDEX_DATE:END_INDEX_DATE]):
-                                        #dateFilesExist = True
-                                        #print filename[START_INDEX_DATE:END_INDEX_DATE]
-                #Select files 
+                                datesListStr.append(currentDate.strftime(dateFormat))
+                                currentDate = currentDate+datetime.timedelta(days=nDays)
+                                print(currentDate.strftime(dateFormat))
+                
+                
+                
+                #Select files usng the list of dates defined
+                #User is alerted when files are missing for some dates (example week 0 : file, week 1: no file (error), week 2: file, week 3: file)
+                founddates = []
+                for filename in fileNamesList:
+                        # checking dates in file names is very important !
+                        print ("Test file :"+filename)
+                        datestr = self.getValidatedDateTimeFromFileName(filename, START_INDEX_DATE, END_INDEX_DATE)
+                        if datestr in datesListStr and datestr not in founddates:
+                                print ("Found str :"+datestr)
+                                selectedFilesPathList.append(allFilesPathList[fileNamesList.index(filename)])
+                                founddates.append(datestr)
+                                print ("Found Path :"+allFilesPathList[fileNamesList.index(filename)])
+                                #TODO compute datediff with last element of found dates to check subsequent dates
+                
+                return list(set(selectedFilesPathList))
+                 
+        def validateDateTime(self, datetimestr, format):
+                datestr = ""
+                try:
+                        date_time = datetime.datetime.strptime(datetimestr, format)
+                        datestr = date_time.strftime(format)
+                except:
+                        print("Error parsing filename to get datetime.")
+                        print(datetimestr+" doesn't represent a valid datetime.") 
+                        self.interpretDateFormat(format) 
+                
+                
+                return datestr
+        
+        def getValidatedDateTimeFromFileName(self, filename, startindex, endindex, format='%m%d%Y'):
+                datepart = filename[startindex:] if (endindex==0) else filename[startindex:endindex]
+                #print ("Date extracted "+datepart)
+                return self.validateDateTime(datepart, format)
         
 
-        def readFile(gzfile):
+
+        def readFile(self, gzfile):
                 """
                 Generate the lines matching the pattern_set
                 """
@@ -180,7 +240,7 @@ def main(args):
     
     #Get files list using configuration
     fileCrawler = FileCrawler(conf)
-    fileCrawler.browseDirectoryRecursive(args.datadir)
+    fileCrawler.browseDirectoryRecursive(args.datadir,args.startdate, None, args.incmode)
 
     #for x in os.listdir(args.datadir):
         #print x
